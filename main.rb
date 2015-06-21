@@ -136,7 +136,12 @@ end
 virtual_drive = VirtualDrive.new(1 * 2**10)
 FileSystem.instance.mount_volume('/',virtual_drive)
 x = JFile.new('/home/jcarson/foo.txt')
+y = JFile.new('/home/jcarson/bar.txt')
 x.puts('James')
+y.puts('John')
 x.puts('Carson')
+y.puts('Snow')
 x.save
+y.save
 print x.to_s
+print y.to_s
