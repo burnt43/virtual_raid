@@ -5,14 +5,11 @@ class Byte
   attr_reader :bit_string
   def initialize(bit_string); @bit_string = bit_string        end
   def to_s;                   @bit_string.to_s                end
-  def newline?;               @bit_string.to_i(2) == 10       end
-  def ==(other);              @bit_string == other.bit_string end
 end
 
 class JFile
 
   attr_reader :name, :data
-  NEWLINE_ASCII_BYTE = Byte.new('00001010')
 
   def initialize(name,data=Array.new)
     @name = name
@@ -81,11 +78,17 @@ class FileSystem
   end
 
   def write_file(file)
-    @file_bytes_hash[file.name] = Array.new
-    virtual_drive = find_virtual_drive_by_filename(file.name)
-    file.data.each { |byte|
-      byte_written = virtual_drive.write_byte(byte)
-      @file_bytes_hash[file.name].push(byte_written)
+    virtual_drive               = find_virtual_drive_by_filename(file.name)
+    file_bytes                  = @file_bytes_hash[file.name] || Array.new
+    @file_bytes_hash[file.name] = Array.new if file_bytes.empty?
+
+    file.data.each_index { |i|
+      if byte_index = file_bytes[i]
+        virtual_drive.write_byte(file.data[i],byte_index)
+      else
+        byte_written = virtual_drive.write_byte(file.data[i])
+        @file_bytes_hash[file.name].push(byte_written)
+      end
     }
   end
 
@@ -93,6 +96,10 @@ class FileSystem
     return nil unless byte_indices = @file_bytes_hash[filename]
     virtual_drive = find_virtual_drive_by_filename(filename)
     virtual_drive.read_bytes(byte_indices)
+  end
+
+  def debug_print_file_bytes_hash
+    @file_bytes_hash.each { |filename,bytes| puts "Filename: #{filename} Bytes: #{bytes}" }
   end
 
   private
@@ -120,10 +127,15 @@ class VirtualDrive
     size_in_bytes.times { @bytes.push(nil) }
   end
 
-  def write_byte(byte)
-    free_byte_index = find_first_free_byte
-    @bytes[free_byte_index] = byte
-    return free_byte_index
+  def write_byte(byte,index=nil)
+    if index
+      @bytes[index] = byte
+      index
+    else
+      free_byte_index = find_first_free_byte
+      @bytes[free_byte_index] = byte
+      free_byte_index
+    end
   end
 
   def read_bytes(byte_indices)
@@ -151,9 +163,9 @@ end
 virtual_drive = VirtualDrive.new(1 * 2**10)
 FileSystem.instance.mount_volume('/',virtual_drive)
 JFile.open('/home/jcarson/foo.txt') { |f|
-  f.puts 'James'
-  f.puts 'Carson'
+  f.puts '1234567'
 }
 JFile.open('/home/jcarson/foo.txt') { |f|
-  f.each_line { |line| puts line }
+  f.puts '1234567'
 }
+FileSystem.instance.debug_print_file_bytes_hash
