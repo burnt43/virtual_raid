@@ -2,17 +2,32 @@
 require 'singleton'
 
 class Byte
-  def initialize(bit_string); @bit_string = bit_string end
-  def to_s;                   @bit_string.to_s         end
+  attr_reader :bit_string
+  def initialize(bit_string); @bit_string = bit_string        end
+  def to_s;                   @bit_string.to_s                end
+  def newline?;               @bit_string.to_i(2) == 10       end
+  def ==(other);              @bit_string == other.bit_string end
 end
 
 class JFile
 
   attr_reader :name, :data
+  NEWLINE_ASCII_BYTE = Byte.new('00001010')
 
-  def initialize(name)
+  def initialize(name,data=Array.new)
     @name = name
-    @data = Array.new
+    @data = data
+  end
+
+  def self.find_or_create_by_filename(filename)
+    data = FileSystem.instance.read_file(filename)
+    data ? JFile.new(filename,data) : JFile.new(filename)
+  end
+
+  def self.open(filename)
+    file = JFile.find_or_create_by_filename(filename)
+    yield(file)
+    file.save
   end
 
   def to_s
@@ -23,12 +38,12 @@ class JFile
     create_bytes_from_string(string + "\n").each { |byte| @data << byte }
   end
 
-  def save
-    FileSystem.instance.write_file(self)
+  def each_line
+    to_s.split("\n").each { |e| yield(e) }
   end
 
-  def self.open(filename)
-
+  def save
+    FileSystem.instance.write_file(self)
   end
 
   private
@@ -75,7 +90,7 @@ class FileSystem
   end
 
   def read_file(filename)
-    raise 'File does not exist' unless byte_indices = @file_bytes_hash[filename]
+    return nil unless byte_indices = @file_bytes_hash[filename]
     virtual_drive = find_virtual_drive_by_filename(filename)
     virtual_drive.read_bytes(byte_indices)
   end
@@ -112,7 +127,7 @@ class VirtualDrive
   end
 
   def read_bytes(byte_indices)
-    @bytes.values_at(*bytes_indices)
+    @bytes.values_at(*byte_indices)
   end
 
   private
@@ -135,13 +150,10 @@ end
 
 virtual_drive = VirtualDrive.new(1 * 2**10)
 FileSystem.instance.mount_volume('/',virtual_drive)
-x = JFile.new('/home/jcarson/foo.txt')
-y = JFile.new('/home/jcarson/bar.txt')
-x.puts('James')
-y.puts('John')
-x.puts('Carson')
-y.puts('Snow')
-x.save
-y.save
-print x.to_s
-print y.to_s
+JFile.open('/home/jcarson/foo.txt') { |f|
+  f.puts 'James'
+  f.puts 'Carson'
+}
+JFile.open('/home/jcarson/foo.txt') { |f|
+  f.each_line { |line| puts line }
+}
