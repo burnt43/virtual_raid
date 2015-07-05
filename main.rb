@@ -166,7 +166,9 @@ class Raid5VirtualDrive
   
   def print_stripes
     @stripes.each { |stripe|
-      puts "#{stripe.parity_blocks.first.physical_drive}: #{stripe.parity_blocks.first.byte_index} - #{stripe.parity_blocks.last.byte_index}"
+      stripe.data_blocks.each   {|data_block| puts "\033[0;32m#{data_block.physical_drive} #{data_block.byte_index}\033[0;39m"}
+      stripe.parity_blocks.each {|data_block| puts "\033[0;33m#{data_block.physical_drive} #{data_block.byte_index}\033[0;39m"}
+      puts '-'*50
     }
   end
 
@@ -182,7 +184,7 @@ class Raid5VirtualDrive
         if drive_number == @physical_drives.length - (stripe_number + 1)
           block_size.times { |i| parity_blocks.push(PhysicalDriveMapping.new(@physical_drives[drive_number],initial_index+i)) }
         else
-          block_size.times { |i| data_blocks.push(PhysicalDriveMapping.new(@physical_drives[drive_number],initial_index+1)) }
+          block_size.times { |i| data_blocks.push(PhysicalDriveMapping.new(@physical_drives[drive_number],initial_index+i)) }
         end
       }
       @stripes.push(Stripe.new(data_blocks,parity_blocks))
