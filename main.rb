@@ -152,29 +152,65 @@ class PhysicalDriveMapping
   end
 end
 
-module OneToOne
-  def raid_name
-    'OneToOne'
+class Raid5VirtualDrive
+
+  class Stripe
+    attr_reader :data_blocks, :parity_blocks
+    def initialize(data_blocks,parity_blocks)
+      @data_blocks   = data_blocks
+      @parity_blocks = parity_blocks
+    end
+    def calculate_parity
+    end
   end
-  def size_in_bytes
-    @physical_drives.first.storage_size
-  end
-  def initialize_physical_drive_mappings
-    size_in_bytes.times { |index|
-      @physical_drive_mappings.push(PhysicalDriveMapping.new(@physical_drives.first,index))
+  
+  def print_stripes
+    @stripes.each { |stripe|
+      puts "#{stripe.parity_blocks.first.physical_drive}: #{stripe.parity_blocks.first.byte_index} - #{stripe.parity_blocks.last.byte_index}"
     }
   end
-end
-
-class VirtualDrive
-
-  include OneToOne
 
   def initialize(physical_drives)
-    @physical_drives              = physical_drives
-    @physical_drive_mappings      = Array.new
-    initialize_physical_drive_mappings
-    $LOG.info "Creating #{self.class} of type #{raid_name} with #{physical_drives.length} disk(s) of size #{size_in_bytes} bytes"
+    @physical_drives = physical_drives
+    @stripes         = Array.new
+    block_size       = @physical_drives.first.storage_size / @physical_drives.length
+    @physical_drives.length.times { |stripe_number|
+      data_blocks   = Array.new
+      parity_blocks = Array.new
+      initial_index = stripe_number * block_size
+      @physical_drives.length.times { |drive_number|
+        if drive_number == @physical_drives.length - (stripe_number + 1)
+          block_size.times { |i| parity_blocks.push(PhysicalDriveMapping.new(@physical_drives[drive_number],initial_index+i)) }
+        else
+          block_size.times { |i| data_blocks.push(PhysicalDriveMapping.new(@physical_drives[drive_number],initial_index+1)) }
+        end
+      }
+      @stripes.push(Stripe.new(data_blocks,parity_blocks))
+    }
+    $LOG.info "Creating #{self.class} with #{@physical_drives.length} disk(s) of size #{size_in_bytes} bytes"
+  end
+
+  def size_in_bytes
+    (@physical_drives.length - 1) * @physical_drives.first.storage_size
+  end
+
+end
+
+class OneToOneVirtualDrive
+
+  def initialize(physical_drive)
+    @physical_drive          = physical_drive
+    @physical_drive_mappings = Array.new
+    size_in_bytes.times { |index| @physical_drive_mappings.push(PhysicalDriveMapping.new(@physical_drive,index)) }
+    $LOG.info "Creating #{self.class} with 1 disk of size #{size_in_bytes} bytes"
+  end
+
+  def size_in_bytes
+    @physical_drive.storage_size
+  end
+
+  def find_first_free_physical_drive_mapping
+    @physical_drive_mappings.find { |physical_drive_mapping| physical_drive_mapping.free? }
   end
 
   def write_byte(byte,index=nil)
@@ -192,21 +228,16 @@ class VirtualDrive
     @physical_drive_mappings.values_at(*byte_indices).collect { |physical_drive_mapping| physical_drive_mapping.read_byte }
   end
 
-  private
-
-  def find_first_free_physical_drive_mapping
-    @physical_drive_mappings.find { |physical_drive_mapping| physical_drive_mapping.free? }
-  end
-
 end
 
 class PhysicalDrive
 
   attr_reader :storage_size
 
-  def initialize(storage_size)
+  def initialize(storage_size,state=:up)
     @storage_size = storage_size
     @bytes        = Array.new
+    @state        = state
     storage_size.times { @bytes.push(nil) }
   end
 
@@ -228,15 +259,7 @@ $LOG.info '-'*80
 $LOG.info 'Starting Program'
 
 physical_drives = Array.new
-1.times { physical_drives.push(PhysicalDrive.new(1 * 2**10)) }
-virtual_drive = VirtualDrive.new(physical_drives)
+4.times { physical_drives.push(PhysicalDrive.new(64)) }
+virtual_drive = Raid5VirtualDrive.new(physical_drives)
 FileSystem.instance.mount_volume('/',virtual_drive)
-JFile.open('foo.txt') { |f|
-  f.puts '1234567'
-}
-JFile.open('bar.txt') { |f|
-  f.puts 'JAMES'
-}
-JFile.open('foo.txt') { |f|
-  f.puts '1234567'
-}
+virtual_drive.print_stripes
