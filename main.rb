@@ -160,14 +160,14 @@ class Raid5VirtualDrive
       @data_blocks   = data_blocks
       @parity_blocks = parity_blocks
     end
-    def calculate_parity
+    def write_parity_block
     end
   end
   
   def print_stripes
     @stripes.each { |stripe|
       stripe.data_blocks.each   {|data_block| puts "\033[0;32m#{data_block.physical_drive} #{data_block.byte_index}\033[0;39m"}
-      stripe.parity_blocks.each {|data_block| puts "\033[0;33m#{data_block.physical_drive} #{data_block.byte_index}\033[0;39m"}
+      stripe.parity_blocks.each {|data_block| puts "\033[0;35m#{data_block.physical_drive} #{data_block.byte_index}\033[0;39m"}
       puts '-'*50
     }
   end
