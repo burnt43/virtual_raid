@@ -51,6 +51,7 @@ class JFile
   end
 
   def save
+    $LOG.info "saving file: #{@name}"
     FileSystem.instance.write_file(self)
   end
 
@@ -116,10 +117,6 @@ class FileSystem
     virtual_drive.read_bytes(byte_indices)
   end
 
-  def debug_print_filename_to_byte_indices_on_drive
-    @filename_to_byte_indices_on_drive.each { |filename,bytes| puts "Filename: #{filename} Bytes: #{bytes}" }
-  end
-
   private
 
   def find_virtual_drive_by_filename(filename)
@@ -164,7 +161,12 @@ class VirtualDrive
   private
 
   def find_first_free_byte
-    @bytes.each_index { |i| return i unless @bytes[i] }
+    @bytes.each_index { |i| 
+      unless @bytes[i]
+        $LOG.info "find_first_free_byte: found #{i}"
+        return i
+      end
+    }
     nil
   end
 
@@ -193,4 +195,3 @@ JFile.open('bar.txt') { |f|
 JFile.open('foo.txt') { |f|
   f.puts '1234567'
 }
-FileSystem.instance.debug_print_filename_to_byte_indices_on_drive
