@@ -134,49 +134,92 @@ class FileSystem
   end
 
 end
+  
+class PhysicalDriveMapping
+  attr_reader :physical_drive, :byte_index
+  def initialize(physical_drive,byte_index)
+    @physical_drive = physical_drive
+    @byte_index     = byte_index
+  end
+  def write_byte(byte)
+    @physical_drive.write_byte(byte,@byte_index)
+  end
+  def read_byte
+    @physical_drive.read_byte(@byte_index)
+  end
+  def free?
+    @physical_drive.byte_index_free?(@byte_index)
+  end
+end
+
+module OneToOne
+  def raid_name
+    'OneToOne'
+  end
+  def size_in_bytes
+    @physical_drives.first.storage_size
+  end
+  def initialize_physical_drive_mappings
+    size_in_bytes.times { |index|
+      @physical_drive_mappings.push(PhysicalDriveMapping.new(@physical_drives.first,index))
+    }
+  end
+end
 
 class VirtualDrive
 
-  def initialize(size_in_bytes)
-    $LOG.info "Creating #{self.class} of size #{size_in_bytes}"
-    @bytes = Array.new
-    size_in_bytes.times { @bytes.push(nil) }
+  include OneToOne
+
+  def initialize(physical_drives)
+    @physical_drives              = physical_drives
+    @physical_drive_mappings      = Array.new
+    initialize_physical_drive_mappings
+    $LOG.info "Creating #{self.class} of type #{raid_name} with #{physical_drives.length} disk(s) of size #{size_in_bytes} bytes"
   end
 
   def write_byte(byte,index=nil)
     if index
-      @bytes[index] = byte
+      @physical_drive_mappings[index].write_byte(byte)
       index
     else
-      free_byte_index = find_first_free_byte
-      @bytes[free_byte_index] = byte
-      free_byte_index
+      physical_drive_mapping = find_first_free_physical_drive_mapping
+      physical_drive_mapping.write_byte(byte)
+      physical_drive_mapping.byte_index
     end
   end
 
   def read_bytes(byte_indices)
-    @bytes.values_at(*byte_indices)
+    @physical_drive_mappings.values_at(*byte_indices).collect { |physical_drive_mapping| physical_drive_mapping.read_byte }
   end
 
   private
 
-  def find_first_free_byte
-    @bytes.each_index { |i| 
-      unless @bytes[i]
-        $LOG.info "find_first_free_byte: found #{i}"
-        return i
-      end
-    }
-    nil
+  def find_first_free_physical_drive_mapping
+    @physical_drive_mappings.find { |physical_drive_mapping| physical_drive_mapping.free? }
   end
 
 end
 
 class PhysicalDrive
 
-  def initialize(storage_size,block_size)
+  attr_reader :storage_size
+
+  def initialize(storage_size)
     @storage_size = storage_size
-    @block_size   = block_size
+    @bytes        = Array.new
+    storage_size.times { @bytes.push(nil) }
+  end
+
+  def write_byte(byte,index)
+    @bytes[index] = byte
+  end
+
+  def read_byte(index)
+    @bytes[index]
+  end
+
+  def byte_index_free?(index)
+    @bytes[index].nil?
   end
 
 end
@@ -184,7 +227,9 @@ end
 $LOG.info '-'*80
 $LOG.info 'Starting Program'
 
-virtual_drive = VirtualDrive.new(1 * 2**10)
+physical_drives = Array.new
+1.times { physical_drives.push(PhysicalDrive.new(1 * 2**10)) }
+virtual_drive = VirtualDrive.new(physical_drives)
 FileSystem.instance.mount_volume('/',virtual_drive)
 JFile.open('foo.txt') { |f|
   f.puts '1234567'
