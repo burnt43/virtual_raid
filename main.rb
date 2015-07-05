@@ -1,5 +1,11 @@
 #!/usr/local/bin/ruby
 require 'singleton'
+require 'logger'
+
+$LOG = Logger.new('./raid.log')
+$LOG.formatter = proc do |severity, datetime, progname, msg|
+  "#{severity}: #{msg}\n"
+end
 
 class Byte
   attr_reader :bit_string
@@ -18,10 +24,15 @@ class JFile
 
   def self.find_or_create_by_filename(filename)
     data = FileSystem.instance.read_file(filename)
-    data ? JFile.new(filename,data) : JFile.new(filename)
+    if data
+      JFile.new(filename,data)
+    else
+      JFile.new(filename)
+    end
   end
 
   def self.open(filename)
+    $LOG.info "opening file: #{filename}"
     file = JFile.find_or_create_by_filename(filename)
     yield(file)
     file.save
@@ -65,41 +76,48 @@ class FileSystem
   include Singleton
 
   def initialize
-    @mount_hash      = Hash.new
-    @file_bytes_hash = Hash.new
+    @mount_to_virtual_drive            = Hash.new
+    @filename_to_byte_indices_on_drive = Hash.new
   end
 
   def mount_volume(mount_point,virtual_drive)
-    if @mount_hash.has_key?(mount_point)
+    $LOG.info "mounting volume #{virtual_drive} at #{mount_point}"
+    if @mount_to_virtual_drive.has_key?(mount_point)
       raise "#{mount_point} is already mounted"
     else
-      @mount_hash[mount_point] = virtual_drive
+      @mount_to_virtual_drive[mount_point] = virtual_drive
     end
   end
 
   def write_file(file)
-    virtual_drive               = find_virtual_drive_by_filename(file.name)
-    file_bytes                  = @file_bytes_hash[file.name] || Array.new
-    @file_bytes_hash[file.name] = Array.new if file_bytes.empty?
+    virtual_drive                                 = find_virtual_drive_by_filename(file.name)
+    byte_indices_on_drive                         = @filename_to_byte_indices_on_drive[file.name] || Array.new
+    @filename_to_byte_indices_on_drive[file.name] = Array.new if byte_indices_on_drive.empty?
 
     file.data.each_index { |i|
-      if byte_index = file_bytes[i]
+      if byte_index = byte_indices_on_drive[i]
+        $LOG.info "Writing #{file.data[i]} at #{byte_index} on #{virtual_drive}"
         virtual_drive.write_byte(file.data[i],byte_index)
       else
         byte_written = virtual_drive.write_byte(file.data[i])
-        @file_bytes_hash[file.name].push(byte_written)
+        $LOG.info "Writing #{file.data[i]} at #{byte_written} on #{virtual_drive}"
+        @filename_to_byte_indices_on_drive[file.name].push(byte_written)
       end
     }
   end
 
   def read_file(filename)
-    return nil unless byte_indices = @file_bytes_hash[filename]
+    unless byte_indices = @filename_to_byte_indices_on_drive[filename]
+      $LOG.info "Can't find #{filename} on drive"
+      return nil
+    end
     virtual_drive = find_virtual_drive_by_filename(filename)
+    $LOG.info "#{filename} on #{virtual_drive} occupies the following indices #{byte_indices}"
     virtual_drive.read_bytes(byte_indices)
   end
 
-  def debug_print_file_bytes_hash
-    @file_bytes_hash.each { |filename,bytes| puts "Filename: #{filename} Bytes: #{bytes}" }
+  def debug_print_filename_to_byte_indices_on_drive
+    @filename_to_byte_indices_on_drive.each { |filename,bytes| puts "Filename: #{filename} Bytes: #{bytes}" }
   end
 
   private
@@ -107,7 +125,7 @@ class FileSystem
   def find_virtual_drive_by_filename(filename)
     split_filename = filename.split('/')
     while split_filename.length > 0
-      virtual_drive = @mount_hash[split_filename.join('/')]
+      virtual_drive = @mount_to_virtual_drive[split_filename.join('/')]
       return virtual_drive if virtual_drive
       split_filename.pop
     end
@@ -115,7 +133,7 @@ class FileSystem
   end
 
   def default_mount_point
-    @mount_hash['/']
+    @mount_to_virtual_drive['/']
   end
 
 end
@@ -123,6 +141,7 @@ end
 class VirtualDrive
 
   def initialize(size_in_bytes)
+    $LOG.info "Creating #{self.class} of size #{size_in_bytes}"
     @bytes = Array.new
     size_in_bytes.times { @bytes.push(nil) }
   end
@@ -160,12 +179,18 @@ class PhysicalDrive
 
 end
 
+$LOG.info '-'*80
+$LOG.info 'Starting Program'
+
 virtual_drive = VirtualDrive.new(1 * 2**10)
 FileSystem.instance.mount_volume('/',virtual_drive)
-JFile.open('/home/jcarson/foo.txt') { |f|
+JFile.open('foo.txt') { |f|
   f.puts '1234567'
 }
-JFile.open('/home/jcarson/foo.txt') { |f|
+JFile.open('bar.txt') { |f|
+  f.puts 'JAMES'
+}
+JFile.open('foo.txt') { |f|
   f.puts '1234567'
 }
-FileSystem.instance.debug_print_file_bytes_hash
+FileSystem.instance.debug_print_filename_to_byte_indices_on_drive
